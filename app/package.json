@@ -1,0 +1,15 @@
+{
+  "name": "tiny-web",
+  "version": "1.0.0",
+  "description": "Tiny Node.js web app for a DevOps test",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "prom-client": "^15.1.0"
+  }
+}

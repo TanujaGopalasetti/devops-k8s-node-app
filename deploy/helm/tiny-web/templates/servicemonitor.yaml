@@ -1,0 +1,20 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tiny-web.fullname" . }}
+  namespace: monitoring 
+  labels:
+    release: {{ .Values.serviceMonitor.releaseLabel | quote }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "tiny-web.fullname" . }}
+  namespaceSelector:
+    matchNames:
+      - demo
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

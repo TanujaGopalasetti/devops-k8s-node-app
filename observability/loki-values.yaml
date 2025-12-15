@@ -1,0 +1,10 @@
+grafana:
+  enabled: true
+  service:
+    type: ClusterIP
+
+loki:
+  enabled: true
+
+promtail:
+  enabled: true

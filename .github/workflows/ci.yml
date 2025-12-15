@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        working-directory: app
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Run tests
+        working-directory: app
+        run: npm test
+
+      # 👇 IMPORTANT: normalize GHCR owner to lowercase
+      - name: Set lowercase owner
+        run: |
+          echo "OWNER_LOWER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LOWER }}/tiny-web:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LOWER }}/tiny-web:latest
+
+      - name: Create KinD cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ci-kind
+
+      - name: Wait for cluster
+        run: |
+          kubectl wait --for=condition=Ready nodes --all --timeout=120s
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install Prometheus stack (metrics)
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+            -n monitoring --create-namespace
+
+      - name: Deploy app with Helm
+        run: |
+          helm upgrade --install tiny-web ./deploy/helm/tiny-web \
+            --namespace demo --create-namespace \
+            --set image.repository=ghcr.io/${{ env.OWNER_LOWER }}/tiny-web \
+            --set image.tag=${{ github.sha }}
+
+      - name: Smoke test
+        run: |
+          kubectl -n demo rollout status deploy/tiny-web --timeout=120s
+          kubectl -n demo port-forward svc/tiny-web 8080:80 &
+          sleep 5
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/metrics | head -n 5
